@@ -57,7 +57,7 @@ executable midisurface
   other-extensions:    ViewPatterns
   
   -- Other library packages from which modules are imported.
-  build-depends:       base >=4.6 && <4.8, alsa-seq >=0.6 && <0.7, alsa-core >=0.5 && <0.6, stm >=2.4 && <2.5, containers ,gtk,mtl
+  build-depends:       base >=4.6 , alsa-seq >=0.6 , alsa-core >=0.5 , stm >=2.4 , containers ,gtk,mtl, text
   
   -- Directories containing source files.
   -- hs-source-dirs:      

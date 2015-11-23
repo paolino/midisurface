@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ScopedTypeVariables, OverloadedStrings #-}
 -- module GUI where
 
 import Graphics.UI.Gtk
@@ -9,6 +9,7 @@ import Control.Concurrent
 import Control.Concurrent.STM
 import System.IO
 import Data.IORef
+import Data.Text
 
 
 import MidiComm
@@ -33,11 +34,11 @@ main = do
   -- main buttons
   coms <- hBoxNew False 1
   boxPackStart mainbox coms PackNatural 0
-  res <- buttonNewWithLabel "Sync"
+  res <- buttonNewWithLabel ("Sync"::Text)
   boxPackStart coms res PackNatural 0
   load <- buttonNewFromStock "Load"
   boxPackStart coms load PackNatural 0
-  fc <- fileChooserButtonNew "Select a file" FileChooserActionOpen
+  fc <- fileChooserButtonNew ("Select a file"::Text) FileChooserActionOpen
   boxPackStart coms fc PackGrow 0
   save <- buttonNewFromStock "Save"
   boxPackStart coms save PackNatural 0
@@ -91,7 +92,7 @@ main = do
           set frame [containerChild:= param]
           boxPackStart hbox frame PackNatural 0
 
-          label <- labelNew (Just "0")
+          label <- labelNew (Just ("0"::Text))
           widgetSetSizeRequest label 30 15
           frame <- frameNew
           set frame [containerChild:= label]
@@ -107,7 +108,7 @@ main = do
           progressBarSetFraction level 0
          
           exvalue <- newIORef 0
-          mute <- toggleButtonNewWithLabel "m" 
+          mute <- toggleButtonNewWithLabel ("m" :: Text)
           widgetSetSizeRequest mute 30 16
           frame <- frameNew
           set frame [containerChild:= mute]

@@ -15,7 +15,7 @@ import Data.Text
 import MidiComm
 
                 
-midichannel = 0
+midichannel = 1
 k = 1/127
 
 main :: IO ()

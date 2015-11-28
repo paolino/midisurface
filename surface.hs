@@ -38,13 +38,24 @@ main = do
   boxPackStart coms res PackNatural 0
   load <- buttonNewFromStock "Load"
   boxPackStart coms load PackNatural 0
+  new <- buttonNewWithLabel ("New" :: Text)
+  boxPackStart coms new PackNatural 0
+  filename <- entryNew
+  boxPackStart coms filename PackNatural 0
   fc <- fileChooserButtonNew ("Select a file"::Text) FileChooserActionOpen
   boxPackStart coms fc PackGrow 0
   save <- buttonNewFromStock "Save"
   boxPackStart coms save PackNatural 0
   quit <- buttonNewFromStock "Quit"
   boxPackStart coms quit PackNatural 0
-
+  
+  new `on` buttonActivated $ do
+        name <- entryGetText filename
+        when (not . Prelude.null $ name) $ do
+                        h <- openFile name WriteMode 
+                        atomically $ writeTVar thandle (Just h)
+        
+    
   -- main buttons actions
   quit `on` buttonActivated $ mainQuit
   save `on` buttonActivated $ do
@@ -126,6 +137,12 @@ main = do
                                 atomically $ writeTChan midioutchan (paramv,floor $ x/k)
                  
 
+          new `on` buttonActivated $ do
+                        x <- progressBarGetFraction level 
+                        mh <- atomically $ readTVar thandle
+                        case mh of 
+                                Nothing -> return ()
+                                Just h -> hPutStrLn h $ show (floor $ x/k :: Int)
 
           save `on` buttonActivated $ do
                         x <- progressBarGetFraction level 
@@ -188,6 +205,12 @@ main = do
                         atomically $ writeTChan midioutchan (paramv,floor $ y/k)
                         progressBarSetFraction level y
                         labelSetText label $ show (floor $ y/k)
+  new `on` buttonActivated $ do
+        mh <- atomically $ readTVar thandle
+        case mh of 
+                Nothing -> return ()
+                Just h -> hClose h
+
   save `on` buttonActivated $ do
         mh <- atomically $ readTVar thandle
         case mh of 

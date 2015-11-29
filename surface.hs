@@ -110,7 +110,7 @@ main = do
           boxPackStart hbox frame PackNatural 0
 
           eb <- eventBoxNew
-          memory <- labelNew (Just $ show (0,0))
+          memory <- newIORef 0
           level <- progressBarNew 
           progressBarSetOrientation level ProgressBottomToTop
           set eb [containerChild:= level]
@@ -180,14 +180,14 @@ main = do
                         atomically $ writeTChan midioutchan (paramv,floor $ x/k)
           on eb motionNotifyEvent $ do 
                 (_,r) <- eventCoordinates
-                (0,r') <- liftIO $ fmap read $ labelGetText memory
+                r' <- liftIO $ readIORef memory
                 liftIO $ do 
                         x <- progressBarGetFraction level 
                         let y = (if r < r' then limitedAdd 1 else limitedSubtract 0) k x
                         progressBarSetFraction level y
                         atomically $ writeTChan midioutchan (paramv,floor $ y/k)
                         labelSetText label $ show (floor $ y/k)
-                        labelSetText memory $ show (0,r)
+                        writeIORef memory $ r
                 return True
           on level scrollEvent $  tryEvent $ do 
                 ScrollUp <- eventScrollDirection

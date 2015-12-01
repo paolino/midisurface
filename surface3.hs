@@ -191,17 +191,20 @@ main = do
           set frame [containerChild:= param]
           boxPackStart hbox frame PackNatural 0
 
+          label <- labelNew (Just ("0"::Text))
+          widgetSetSizeRequest label 28 15
+          frame <- frameNew
+          set frame [containerChild:= label]
+          boxPackStart hbox frame PackNatural 0
 
           eb <- eventBoxNew
           memory <- newIORef 0
-          ad <- adjustmentNew 0 0 127 1 1 1
-          level <- vScaleNewWithRange 0 127 1 -- progressBarNew 
-          rangeSetAdjustment level ad
-          -- progressBarSetOrientation level ProgressBottomToTop
+          level <- progressBarNew 
+          progressBarSetOrientation level ProgressBottomToTop
           set eb [containerChild:= level]
           widgetAddEvents eb [Button1MotionMask]
           boxPackStart hbox eb PackGrow 0
-          rangeSetValue level 0 -- progressBarSetFraction level 0
+          progressBarSetFraction level 0
          
           -- track load of new parameter sets or midiin
           update' <- atomically $ dupTChan update
@@ -212,18 +215,35 @@ main = do
                   flip (M.!) paramv  <$> view controls <$> flip (M.!) sel <$> readTVar tboard
                 atomically $ writeTChan midioutchan $ C paramv wx
                 postGUISync $ do
-                  rangeSetValue level  (fromIntegral wx)  -- progressBarSetFraction level (fromIntegral wx * k)
+                  progressBarSetFraction level (fromIntegral wx * k)
+                  labelSetText label $ show wx
                   labelSetText param $ show paramv
-
-          on level valueChanged $ do 
-              x <- rangeGetValue level -- progressBarGetFraction level 
+              
+          let evento f = do
+              x <- f <$> progressBarGetFraction level 
+              let z = floor $ x/k
               atomically $ do 
-                  let z = floor x
-                  writeTChan midioutchan (paramv,z)
+                  writeTChan midioutchan $ C paramv z
                   sel <- readTVar tsel
-                  modifyTVar tboard $ M.adjust (M.insert paramv z) sel
+                  modifyTVar tboard $ M.adjust (over controls $ M.insert paramv z) sel
+              progressBarSetFraction level x
+              labelSetText label $ show z
 
-  window `on` deleteEvent $ liftIO mainQuit >> return False
+          on eb motionNotifyEvent $ do 
+                (_,r) <- eventCoordinates
+                liftIO $ do 
+                        r' <- readIORef memory
+                        evento $ (if r < r' then limitedAdd 1 else limitedSubtract 0) k
+                        writeIORef memory $ r
+                return True
+          on level scrollEvent $  tryEvent $ do 
+                ScrollUp <- eventScrollDirection
+                liftIO . evento $ limitedAdd 1 k
+          on level scrollEvent $  tryEvent $ do 
+                ScrollDown <- eventScrollDirection
+                liftIO . evento $ limitedSubtract 0 k
+
+  onDestroy window mainQuit
   widgetShowAll window
   mainGUI
 

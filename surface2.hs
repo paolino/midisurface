@@ -21,7 +21,6 @@ import MidiComm
 
                 
 midichannel = 1
-k = 1/128
 
 data Channell = Channell {
         _controls :: M.Map Int Int,
@@ -133,8 +132,8 @@ main = do
   forM_ [0..3::Int] $ \m ->  do
           noteline <- hBoxNew False 1
           boxPackStart notes noteline PackNatural 0
-          forM_ [0..31::Int] $ \n ->  do
-              let n' = n + m * 32
+          forM_ [0..12::Int] $ \n ->  do
+              let n' = 36 + n + m * 32
               lb <- buttonNewWithLabel (printf "%03d" n' :: String)  
               boxPackStart noteline lb PackNatural 0
               lb `on` buttonPressEvent $ liftIO . atomically $ do
@@ -153,7 +152,7 @@ main = do
                           readTChan update'
                           sel <- readTVar tsel
                           flip (M.!) n'  <$> view noteoos <$> flip (M.!) sel <$> readTVar tboard
-
+                        print wx
                         case wx of
                                 True -> do 
                                         postGUISync $ buttonPressed lb
@@ -219,9 +218,9 @@ main = do
               x <- rangeGetValue level -- progressBarGetFraction level 
               atomically $ do 
                   let z = floor x
-                  writeTChan midioutchan (paramv,z)
+                  writeTChan midioutchan $ C paramv z
                   sel <- readTVar tsel
-                  modifyTVar tboard $ M.adjust (M.insert paramv z) sel
+                  modifyTVar tboard $ M.adjust (over controls $ M.insert paramv z) sel
 
   window `on` deleteEvent $ liftIO mainQuit >> return False
   widgetShowAll window

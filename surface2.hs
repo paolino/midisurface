@@ -1,7 +1,8 @@
-{-# LANGUAGE ScopedTypeVariables, OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables, OverloadedStrings , TemplateHaskell#-}
 -- module GUI where
 
 import Graphics.UI.Gtk
+
 import Control.Monad
 import Control.Monad.Trans
 
@@ -12,19 +13,27 @@ import Data.IORef
 import Data.Text hiding (zip,null)
 import qualified Data.Map as M
 import Text.Printf
+import Control.Lens (over,view)
+import Control.Lens.TH
 
 
 import MidiComm
 
                 
 midichannel = 1
-k = 1/127
+k = 1/128
+
+data Channell = Channell {
+        _controls :: M.Map Int Int,
+        _noteoos :: M.Map Int Bool
+        } deriving (Show,Read)
+makeLenses ''Channell
 
 main :: IO ()
 main = do
   (midiinchan, midioutchan, _) <- midiInOut "midi control GUI" midichannel 
   thandle <- newTVarIO Nothing
-  tboard <- newTVarIO $ M.fromList $ zip [0..15] $ repeat (M.fromList $ zip [0..127] $ repeat 0) :: IO (TVar (M.Map Int (M.Map Int Int)))
+  tboard <- newTVarIO $ M.fromList $ zip [0..15] $ repeat (Channell (M.fromList $ zip [0..127] $ repeat 0) (M.fromList $ zip [0..127] $ repeat False)):: IO (TVar (M.Map Int Channell))
   update <- newBroadcastTChanIO
   tsel <- newTVarIO 0
 
@@ -32,9 +41,13 @@ main = do
   window <- windowNew
   -- midi listening
   forkIO . forever . atomically $ do
-                (tp,wx) <- readTChan midiinchan
+                e <- readTChan midiinchan
                 sel <- readTVar tsel
-                modifyTVar tboard $ M.adjust (M.insert tp wx) sel
+                modifyTVar tboard . flip M.adjust sel $ case e of
+                        C tp wx -> over controls $ M.insert tp wx
+                        Non n v -> over noteoos $ M.insert n True
+                        Noff n v -> over noteoos $ M.insert n False
+                        
                 writeTChan update ()
 
 
@@ -89,10 +102,11 @@ main = do
           readTVarIO tboard >>= writeFile name . show
           fileChooserSetFilename fc $ name
           return ()
+  {- broken ?
   fc `on` fileActivated $  do 
-        print "ah"
         Just name <- fileChooserGetFilename fc
         entrySetText filename $ name
+  -}
   -- main buttons actions
   quit `on` buttonActivated $ mainQuit
   save `on` buttonActivated $ do
@@ -111,8 +125,45 @@ main = do
   -- ad <- adjustmentNew 0 0 400 1 10 400
   -- sw <- scrolledWindowNew Nothing (Just ad)
   controlbox <- hBoxNew False 1
+  notes <- vBoxNew False 1
+  boxPackStart mainbox notes PackNatural 0
   boxPackStart mainbox controlbox PackNatural 0
   boxPackStart controlbox selecter PackNatural 0
+
+  forM_ [0..3::Int] $ \m ->  do
+          noteline <- hBoxNew False 1
+          boxPackStart notes noteline PackNatural 0
+          forM_ [0..31::Int] $ \n ->  do
+              let n' = n + m * 32
+              lb <- buttonNewWithLabel (printf "%03d" n' :: String)  
+              boxPackStart noteline lb PackNatural 0
+              lb `on` buttonPressEvent $ liftIO . atomically $ do
+                        sel <- readTVar tsel
+                        writeTChan midioutchan $ Non n' 127
+                        modifyTVar tboard $ M.adjust (over noteoos $ M.insert n' True) sel
+                        return False
+              lb `on` buttonReleaseEvent $ liftIO . atomically $ do
+                        sel <- readTVar tsel
+                        writeTChan midioutchan $ Noff n' 0
+                        modifyTVar tboard $ M.adjust (over noteoos $ M.insert n' False) sel
+                        return False
+              update' <- atomically $ dupTChan update
+              forkIO . forever $ do 
+                        wx <- atomically $ do
+                          readTChan update'
+                          sel <- readTVar tsel
+                          flip (M.!) n'  <$> view noteoos <$> flip (M.!) sel <$> readTVar tboard
+
+                        case wx of
+                                True -> do 
+                                        postGUISync $ buttonPressed lb
+                                        atomically $ writeTChan midioutchan $ Non n' 127
+
+                                False -> do
+                                        postGUISync $ buttonReleased lb
+                                        atomically $ writeTChan midioutchan $ Noff n' 0
+        
+
   fillnobbox <- hBoxNew False 1
   boxPackStart controlbox fillnobbox PackNatural 0
   knoblines <- vBoxNew False 1
@@ -131,7 +182,7 @@ main = do
                   boxPackStart knobbox hbox PackNatural 0
                  
           hbox    <- vBoxNew False 1
-          widgetSetSizeRequest hbox (-1) 165
+          widgetSetSizeRequest hbox (-1) 135
           boxPackStart knobbox hbox PackNatural 0
 
           param <- labelNew (Just $ show paramv)
@@ -161,8 +212,8 @@ main = do
                 wx <- atomically $ do
                   readTChan update'
                   sel <- readTVar tsel
-                  flip (M.!) paramv <$> flip (M.!) sel <$> readTVar tboard
-                atomically $ writeTChan midioutchan (paramv,wx)
+                  flip (M.!) paramv  <$> view controls <$> flip (M.!) sel <$> readTVar tboard
+                atomically $ writeTChan midioutchan $ C paramv wx
                 postGUISync $ do
                   progressBarSetFraction level (fromIntegral wx * k)
                   labelSetText label $ show wx
@@ -172,9 +223,9 @@ main = do
               x <- f <$> progressBarGetFraction level 
               let z = floor $ x/k
               atomically $ do 
-                  writeTChan midioutchan (paramv,z)
+                  writeTChan midioutchan $ C paramv z
                   sel <- readTVar tsel
-                  modifyTVar tboard $ M.adjust (M.insert paramv z) sel
+                  modifyTVar tboard $ M.adjust (over controls $ M.insert paramv z) sel
               progressBarSetFraction level x
               labelSetText label $ show z
 

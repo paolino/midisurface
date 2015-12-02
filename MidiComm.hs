@@ -1,4 +1,4 @@
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE ViewPatterns, TemplateHaskell #-}
 module MidiComm where
 
 
@@ -17,9 +17,11 @@ import Sound.ALSA.Exception
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad
+import Control.Lens
+import Control.Lens.TH
 
 data E = Non Int Int | Noff Int Int | C Int Int
-
+makePrisms ''E
 -- | Loop-accept control midi message on a specific channel
 midiIn  :: String  -- ^ client name
         -> Int     -- ^ listening midi channel

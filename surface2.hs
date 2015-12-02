@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, OverloadedStrings , TemplateHaskell#-}
+{-# LANGUAGE ScopedTypeVariables, OverloadedStrings , TemplateHaskell,  ViewPatterns, Rank2Types#-}
 -- module GUI where
 
 import Graphics.UI.Gtk
@@ -13,7 +13,7 @@ import Data.IORef
 import Data.Text hiding (zip,null)
 import qualified Data.Map as M
 import Text.Printf
-import Control.Lens (over,view)
+import Control.Lens (over,view,preview,Prism',_1)
 import Control.Lens.TH
 
 
@@ -27,6 +27,9 @@ data Channell = Channell {
         _noteoos :: M.Map Int Bool
         } deriving (Show,Read)
 makeLenses ''Channell
+
+matchEv :: Prism' E (Int,Int) -> Int -> E -> Maybe Bool
+matchEv x n = fmap ((==) n . view _1).preview x
 
 main :: IO ()
 main = do
@@ -46,8 +49,9 @@ main = do
                         C tp wx -> over controls $ M.insert tp wx
                         Non n v -> over noteoos $ M.insert n True
                         Noff n v -> over noteoos $ M.insert n False
+                writeTChan midioutchan e
                         
-                writeTChan update ()
+                writeTChan update $ Just e
 
 
   -- main box   
@@ -83,7 +87,7 @@ main = do
       res `on` buttonActivated $ do
         atomically $ do 
             writeTVar tsel $ n
-            writeTChan update ()
+            writeTChan update Nothing
 
       copy <- buttonNewWithLabel $ ("C"::Text)
       boxPackStart lb copy PackNatural 0
@@ -92,7 +96,7 @@ main = do
         atomically $ do 
             sel <- readTVar tsel 
             modifyTVar tboard $ \b -> M.insert n (b M.! sel) b 
-            writeTChan update ()
+            writeTChan update Nothing
         buttonClicked res
  
   new `on` buttonActivated $ do
@@ -119,7 +123,7 @@ main = do
                 Nothing -> return ()
                 Just name -> do 
                         readFile name >>= atomically . writeTVar tboard . read
-                        atomically $ writeTChan update ()
+                        atomically $ writeTChan update Nothing
   -- knobs
   -- ad <- adjustmentNew 0 0 400 1 10 400
   -- sw <- scrolledWindowNew Nothing (Just ad)
@@ -132,9 +136,9 @@ main = do
   forM_ [0..3::Int] $ \m ->  do
           noteline <- hBoxNew False 1
           boxPackStart notes noteline PackNatural 0
-          forM_ [0..12::Int] $ \n ->  do
-              let n' = 36 + n + m * 32
-              lb <- buttonNewWithLabel (printf "%03d" n' :: String)  
+          forM_ [0..11::Int] $ \n ->  do
+              let n' = 36 + n + m * 12
+              lb <- checkButtonNewWithLabel (printf "%03d" n' :: String)  
               boxPackStart noteline lb PackNatural 0
               lb `on` buttonPressEvent $ liftIO . atomically $ do
                         sel <- readTVar tsel
@@ -148,19 +152,26 @@ main = do
                         return False
               update' <- atomically $ dupTChan update
               forkIO . forever $ do 
-                        wx <- atomically $ do
-                          readTChan update'
+                        x <- atomically $ do
+                          r <- readTChan update' 
                           sel <- readTVar tsel
-                          flip (M.!) n'  <$> view noteoos <$> flip (M.!) sel <$> readTVar tboard
-                        print wx
-                        case wx of
-                                True -> do 
+                          wx <- flip (M.!) n'  <$> view noteoos <$> flip (M.!) sel <$> readTVar tboard
+                          return (r,wx)
+                        let     t (fmap (matchEv _Non n') -> Just (Just True), True)  = do 
+                                        postGUISync $ toggleButtonSetActive lb True
+                                t (fmap (matchEv _Noff n') -> Just (Just True), False) = do
+                                        postGUISync $ toggleButtonSetActive lb False
+                                        print ("noff",n')
+                                t (fmap (matchEv _Non n') -> Nothing, True)  = do
+                                        print ("non",n')
                                         postGUISync $ buttonPressed lb
-                                        atomically $ writeTChan midioutchan $ Non n' 127
-
-                                False -> do
-                                        postGUISync $ buttonReleased lb
                                         atomically $ writeTChan midioutchan $ Noff n' 0
+                                t (fmap (matchEv _Noff n') -> Nothing, False) =  do
+                                        print ("noff",n')
+                                        postGUISync $ buttonReleased lb
+                                        atomically $ writeTChan midioutchan $ Non n' 127
+                                t _ = return ()
+                        t x
         
 
   fillnobbox <- hBoxNew False 1
@@ -176,7 +187,8 @@ main = do
      boxPackStart knoblines knobbox PackNatural 0
      forM_ [0..31] $ \paramv'' -> do
           let paramv= paramv' *32 + paramv''
-          when (paramv `mod` 8 == 0) $ do
+          let c = paramv `mod` 8
+          when (c == 0) $ do
                   hbox    <- vBoxNew False 1
                   boxPackStart knobbox hbox PackNatural 0
                  
@@ -205,15 +217,18 @@ main = do
           -- track load of new parameter sets or midiin
           update' <- atomically $ dupTChan update
           forkIO . forever $ do 
-                wx <- atomically $ do
-                  readTChan update'
+                (x,wx) <- atomically $ do
+                  r <- readTChan update'
                   sel <- readTVar tsel
-                  flip (M.!) paramv  <$> view controls <$> flip (M.!) sel <$> readTVar tboard
-                atomically $ writeTChan midioutchan $ C paramv wx
-                postGUISync $ do
-                  rangeSetValue level  (fromIntegral wx)  -- progressBarSetFraction level (fromIntegral wx * k)
-                  labelSetText param $ show paramv
-
+                  wx <- flip (M.!) paramv  <$> view controls <$> flip (M.!) sel <$> readTVar tboard
+                  return (r,wx)
+                let     t (fmap (matchEv _C paramv) -> Just (Just True)) =
+                                postGUISync $ rangeSetValue level  (fromIntegral wx)  -- progressBarSetFraction level (fromIntegral wx * k)
+                        t (fmap (matchEv _C paramv) -> Nothing) = do
+                                postGUISync $ rangeSetValue level  (fromIntegral wx)  -- progressBarSetFraction level (fromIntegral wx * k)
+                                atomically $ writeTChan midioutchan $ C paramv wx
+                        t _ = return ()
+                t x
           on level valueChanged $ do 
               x <- rangeGetValue level -- progressBarGetFraction level 
               atomically $ do 

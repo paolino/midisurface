@@ -20,7 +20,7 @@ import Control.Lens.TH
 import MidiComm
 
                 
-midichannel = 1
+midichannel = 0
 
 data Channell = Channell {
         _controls :: M.Map Int Int,

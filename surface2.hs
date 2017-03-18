@@ -19,7 +19,7 @@ import Control.Lens.TH
 
 import MidiComm
 
-                
+
 midichannel = 0
 
 data Channell = Channell {
@@ -33,7 +33,7 @@ matchEv x n = fmap ((==) n . view _1).preview x
 
 main :: IO ()
 main = do
-  (midiinchan, midioutchan, _) <- midiInOut "midi control GUI" midichannel 
+  (midiinchan, midioutchan, _) <- midiInOut "midi control GUI" midichannel
   thandle <- newTVarIO Nothing
   tboard <- newTVarIO $ M.fromList $ zip [0..15] $ repeat (Channell (M.fromList $ zip [0..127] $ repeat 0) (M.fromList $ zip [0..127] $ repeat False)):: IO (TVar (M.Map Int Channell))
   update <- newBroadcastTChanIO
@@ -50,11 +50,11 @@ main = do
                         Non n v -> over noteoos $ M.insert n True
                         Noff n v -> over noteoos $ M.insert n False
                 writeTChan midioutchan e
-                        
+
                 writeTChan update $ Just e
 
 
-  -- main box   
+  -- main box
   mainbox    <- vBoxNew False 1
   set window [windowDefaultWidth := 200, windowDefaultHeight := 200,
                           containerBorderWidth := 10, containerChild := mainbox]
@@ -80,12 +80,12 @@ main = do
   forM_ [0..15] $ \n ->  do
       lb <- hBoxNew False 1
       boxPackStart selecter lb PackNatural 0
-      res <- case n of 
-        0 -> return res0 
-        _ -> radioButtonNewWithLabelFromWidget res0 (printf "%02d" n :: String) 
-      
+      res <- case n of
+        0 -> return res0
+        _ -> radioButtonNewWithLabelFromWidget res0 (printf "%02d" n :: String)
+
       res `on` buttonActivated $ do
-        atomically $ do 
+        atomically $ do
             writeTVar tsel $ n
             writeTChan update Nothing
 
@@ -93,20 +93,20 @@ main = do
       boxPackStart lb copy PackNatural 0
       boxPackStart lb res PackNatural 0
       copy `on` buttonActivated $ do
-        atomically $ do 
-            sel <- readTVar tsel 
-            modifyTVar tboard $ \b -> M.insert n (b M.! sel) b 
+        atomically $ do
+            sel <- readTVar tsel
+            modifyTVar tboard $ \b -> M.insert n (b M.! sel) b
             writeTChan update Nothing
         buttonClicked res
- 
+
   new `on` buttonActivated $ do
         name <- entryGetText filename
-        when (not . null $ name) $ do 
+        when (not . null $ name) $ do
           readTVarIO tboard >>= writeFile name . show
           fileChooserSetFilename fc $ name
           return ()
   {- broken ?
-  fc `on` fileActivated $  do 
+  fc `on` fileActivated $  do
         Just name <- fileChooserGetFilename fc
         entrySetText filename $ name
   -}
@@ -114,14 +114,14 @@ main = do
   quit `on` buttonActivated $ mainQuit
   save `on` buttonActivated $ do
         mname <- fileChooserGetFilename fc
-        case mname of 
+        case mname of
                 Nothing -> return ()
                 Just name -> readTVarIO tboard >>= writeFile name . show
   load `on` buttonActivated $ do
         mname <- fileChooserGetFilename fc
-        case mname of 
+        case mname of
                 Nothing -> return ()
-                Just name -> do 
+                Just name -> do
                         readFile name >>= atomically . writeTVar tboard . read
                         atomically $ writeTChan update Nothing
   -- knobs
@@ -138,7 +138,7 @@ main = do
           boxPackStart notes noteline PackNatural 0
           forM_ [0..11::Int] $ \n ->  do
               let n' = 36 + n + m * 12
-              lb <- checkButtonNewWithLabel (printf "%03d" n' :: String)  
+              lb <- checkButtonNewWithLabel (printf "%03d" n' :: String)
               boxPackStart noteline lb PackNatural 0
               lb `on` buttonPressEvent $ liftIO . atomically $ do
                         sel <- readTVar tsel
@@ -151,13 +151,13 @@ main = do
                         modifyTVar tboard $ M.adjust (over noteoos $ M.insert n' False) sel
                         return False
               update' <- atomically $ dupTChan update
-              forkIO . forever $ do 
+              forkIO . forever $ do
                         x <- atomically $ do
-                          r <- readTChan update' 
+                          r <- readTChan update'
                           sel <- readTVar tsel
                           wx <- flip (M.!) n'  <$> view noteoos <$> flip (M.!) sel <$> readTVar tboard
                           return (r,wx)
-                        let     t (fmap (matchEv _Non n') -> Just (Just True), True)  = do 
+                        let     t (fmap (matchEv _Non n') -> Just (Just True), True)  = do
                                         postGUISync $ toggleButtonSetActive lb True
                                 t (fmap (matchEv _Noff n') -> Just (Just True), False) = do
                                         postGUISync $ toggleButtonSetActive lb False
@@ -172,28 +172,28 @@ main = do
                                         atomically $ writeTChan midioutchan $ Non n' 127
                                 t _ = return ()
                         t x
-        
+
 
   fillnobbox <- hBoxNew False 1
   boxPackStart controlbox fillnobbox PackNatural 0
   knoblines <- vBoxNew False 1
   boxPackStart fillnobbox knoblines PackNatural 0
-   
-  forM_ [0..3] $ \paramv' -> do
+  let z = 9
+  forM_ [0..0] $ \paramv' -> do
      knobboxspace    <- hBoxNew True 1
      widgetSetSizeRequest knobboxspace (-1) 10
      boxPackStart knoblines knobboxspace PackNatural 0
      knobbox    <- hBoxNew True 1
      boxPackStart knoblines knobbox PackNatural 0
-     forM_ [0..31] $ \paramv'' -> do
-          let paramv= paramv' *32 + paramv''
-          let c = paramv `mod` 8
+     forM_ [0..z*3 - 1] $ \paramv'' -> do
+          let paramv= paramv' * z* 3 + paramv''
+          let c = paramv `mod` z
           when (c == 0) $ do
                   hbox    <- vBoxNew False 1
                   boxPackStart knobbox hbox PackNatural 0
-                 
+
           hbox    <- vBoxNew False 1
-          widgetSetSizeRequest hbox (-1) 135
+          widgetSetSizeRequest hbox (-1) 235
           boxPackStart knobbox hbox PackNatural 0
 
           param <- labelNew (Just $ show paramv)
@@ -206,17 +206,17 @@ main = do
           eb <- eventBoxNew
           memory <- newIORef 0
           ad <- adjustmentNew 0 0 127 1 1 1
-          level <- vScaleNewWithRange 0 127 1 -- progressBarNew 
+          level <- vScaleNewWithRange 0 127 1 -- progressBarNew
           rangeSetAdjustment level ad
           -- progressBarSetOrientation level ProgressBottomToTop
           set eb [containerChild:= level]
           widgetAddEvents eb [Button1MotionMask]
           boxPackStart hbox eb PackGrow 0
           rangeSetValue level 0 -- progressBarSetFraction level 0
-         
+
           -- track load of new parameter sets or midiin
           update' <- atomically $ dupTChan update
-          forkIO . forever $ do 
+          forkIO . forever $ do
                 (x,wx) <- atomically $ do
                   r <- readTChan update'
                   sel <- readTVar tsel
@@ -229,9 +229,9 @@ main = do
                                 atomically $ writeTChan midioutchan $ C paramv wx
                         t _ = return ()
                 t x
-          on level valueChanged $ do 
-              x <- rangeGetValue level -- progressBarGetFraction level 
-              atomically $ do 
+          on level valueChanged $ do
+              x <- rangeGetValue level -- progressBarGetFraction level
+              atomically $ do
                   let z = floor x
                   writeTChan midioutchan $ C paramv z
                   sel <- readTVar tsel

@@ -22,6 +22,7 @@ import MidiComm
 
 
 midichannel = 0
+nparams = 27
 
 data Cntrl = Cntrl {
   _base :: Int,
@@ -43,23 +44,9 @@ data Channell = Channell {
         } deriving (Show,Read)
 makeLenses ''Channell
 
-matchEv :: Prism' E (Int,Int) -> Int -> E -> Maybe Bool
-matchEv x n = fmap ((==) n . view _1).preview x
-
-main :: IO ()
-main = do
-  (midiinchan, midioutchan, _) <- midiInOut "midi control GUI" midichannel
-  tboard <- newTVarIO $ M.fromList $ zip [0..15] $ repeat (Channell (M.fromList $ zip [0..127] $ repeat zero) (M.fromList $ zip [0..127] $ repeat False)):: IO (TVar (M.Map Int Channell))
-
-  update <- newBroadcastTChanIO -- duplicable messages from midi
-  forkIO . forever . atomically $ readTChan midiinchan >>= writeTChan update
-
-  tsel <- newTVarIO 0 -- patch selection
-
-  reset <- newBroadcastTChanIO -- rewrite condition
-
-  name:_ <- getArgs -- persistence file name
-
+------------------------- persistence -------------------
+persistence name tboard reset = do
+  -- try to get back data
   t <- doesFileExist name
   when t $ do
       r <- readFile name
@@ -69,26 +56,40 @@ main = do
           atomically (writeTChan reset ())
       return ()
 
-  initGUI
-  window <- windowNew
-
   forkIO . forever $ do
       threadDelay 1000000
       r <- atomically $ readTVar tboard
       writeFile name $ show r
-  -- midi listening
-  --
+------------------------------------------------------
+
+main :: IO ()
+main = do
+
+  initGUI
+
+  (midiinchan, midioutchan, _) <- midiInOut "linear projection surface" midichannel
+  tboard <- newTVarIO $ M.fromList $ zip [0..15]
+    $ repeat (Channell  (M.fromList $ zip [0..127] $ repeat zero)
+                        (M.fromList $ zip [0..127] $ repeat False))
+  name:_ <- getArgs -- persistence file name
+
+  reset <- newBroadcastTChanIO -- rewrite condition
+
+  persistence name tboard reset
+
+-- midi dups ----------------
+  update <- newBroadcastTChanIO -- duplicable messages from midi
+-- pass through thread
+  forkIO . forever . atomically $ readTChan midiinchan >>= writeTChan update
+
+
+  tsel <- newTVarIO 0 -- patch selection
+
 
 
   -- main box
-
   mainbox    <- vBoxNew False 1
-  set window [windowDefaultWidth := 200, windowDefaultHeight := 200,
-                          containerBorderWidth := 10, containerChild := mainbox]
-  -- main buttons
-  -- knobs
-  -- ad <- adjustmentNew 0 0 400 1 10 400
-  -- sw <- scrolledWindowNew Nothing (Just ad)
+
   commandBox <- hBoxNew False 1
   boxPackStart mainbox commandBox PackNatural 0
 
@@ -119,8 +120,7 @@ main = do
   controlbox <- hBoxNew False 1
   boxPackStart mainbox controlbox PackNatural 0
 
-  let z = 27
-  forM_ [0..z - 1] $ \param -> do
+  forM_ [0..nparams - 1] $ \param -> do
     paramBox    <- vBoxNew False 1
     widgetSetSizeRequest paramBox (-1) 540
     boxPackStart controlbox paramBox PackNatural 0
@@ -179,7 +179,7 @@ main = do
           rangeSetValue shiftScale . fromIntegral $ wx ^. cntrl . base
           rangeSetValue widthScale . fromIntegral $ wx ^. cntrl . width
 
-    on input valueChanged $ do
+    input `on` valueChanged $ do
         x <- floor <$> rangeGetValue input -- progressBarGetFraction input
         tiffe <- toggleButtonGetActive mute
         when (not tiffe) $ do
@@ -188,29 +188,31 @@ main = do
               wx <- flip (M.!) param  <$> view controls <$> flip (M.!) sel <$> readTVar tboard
               let t = floor $ fromIntegral x /128 *fromIntegral (wx ^. cntrl . width)  + fromIntegral (wx ^. cntrl . base)
               writeTChan midioutchan . C param $ t
-              modifyTVar tboard $ ix sel . controls . ix param %~ actual  .~ z
+              modifyTVar tboard $ ix sel . controls . ix param %~ actual  .~ x
               return t
             rangeSetValue output $ fromIntegral t
 
-    on widthScale valueChanged $ do
+    widthScale `on` valueChanged $ do
       x <- floor <$> rangeGetValue widthScale -- progressBarGetFraction input
       atomically $ do
           sel <- readTVar tsel
           modifyTVar tboard $ ix sel . controls . ix param %~ cntrl . width  .~ x
 
-    on shiftScale valueChanged $ do
+    shiftScale `on` valueChanged $ do
       x <- floor <$> rangeGetValue shiftScale -- progressBarGetFraction input
       atomically $ do
           sel <- readTVar tsel
           modifyTVar tboard $ ix sel . controls . ix param %~ cntrl . base  .~ x
 
+
+
+  window <- windowNew
+  set window [windowDefaultWidth := 200, windowDefaultHeight := 200,
+                          containerBorderWidth := 10, containerChild := mainbox]
+
   window `on` deleteEvent $ liftIO mainQuit >> return False
+
   widgetShowAll window
+
   mainGUI
 
-limitedAdd xm d x
-        | x + d > xm = xm
-        | otherwise = x + d
-limitedSubtract xm d x
-        | x - d < xm = xm
-        | otherwise = x - d
